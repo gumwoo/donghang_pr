@@ -21,7 +21,7 @@ const spendingRoutes = require('./routes/spendingRoutes');
 const chatbotRoutes = require('./routes/chatbotRoutes');
 
 // 환경 변수 로드
-dotenv.config();
+require('dotenv').config();
 
 // 익스프레스 앱 초기화
 const app = express();

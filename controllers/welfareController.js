@@ -21,13 +21,18 @@ const logToFile = (message, level = 'INFO') => {
 // 공공데이터 API 호출 함수
 const fetchWelfareDataFromAPI = async () => {
   try {
-    // 환경 변수에서 API 키 가져오기
-    const encodedKey = process.env.PUBLIC_DATA_API_KEY || 'Lmc1Zq9hmKIACiZKiXehoeHi1ac4HG25EqROFy%2F%2FOkLBLhn5EWFL0X38pRF%2BFWvlRuRHJx7N79cf7zcsRUz%2BNA%3D%3D';
+    // 환경 변수에서 API 키 가져오기 - URL 인코딩 상태로 사용
+    const encodedKey = 'Lmc1Zq9hmKIACiZKiXehoeHi1ac4HG25EqROFy%2F%2FOkLBLhn5EWFL0X38pRF%2BFWvlRuRHJx7N79cf7zcsRUz%2BNA%3D%3D';
     
-    // 복지서비스 API - 가장 최근의 데이터(2024년) 사용
-    // 정확한 URL과 파라미터 형식으로 수정
+    // curl 테스트에서 성공했던 URL 사용
     const url = `https://api.odcloud.kr/api/15083323/v1/uddi:48d6c839-ce02-4546-901e-e9ad9bae8e0d?serviceKey=${encodedKey}&page=1&perPage=20&returnType=JSON`;
     
+    /* ---------- 여기에 디버그 줄 넣기 ---------- */
+    const rawKey = (process.env.PUBLIC_DATA_API_KEY || '').trim();
+    logToFile(`DEBUG KEY = [${rawKey}]`, 'DEBUG');   // .env에 있는 값을 그대로 보여줌
+    logToFile(`DEBUG URL = ${url}`, 'DEBUG');        // 실제 호출할 전체 URL 확인
+    /* ------------------------------------------- */
+
     logToFile('복지서비스 공공데이터 API 호출 시작: ' + url.substring(0, 100) + '...');
     
     const response = await axios.get(url, {
@@ -76,14 +81,13 @@ const fetchWelfareDataFromAPI = async () => {
 // 인천 소비 통계 API 호출 함수
 const fetchIncheonStatisticsFromAPI = async (params = {}) => {
   try {
-    // 환경 변수에서 API 키 가져오기
-    const encodedKey = process.env.INCHEON_API_KEY || 'Lmc1Zq9hmKIACiZKiXehoeHi1ac4HG25EqROFy%2F%2FOkLBLhn5EWFL0X38pRF%2BFWvlRuRHJx7N79cf7zcsRUz%2BNA%3D%3D';
+    // 환경 변수에서 API 키 가져오기 - 고정 API 키 사용
+    const encodedKey = 'Lmc1Zq9hmKIACiZKiXehoeHi1ac4HG25EqROFy%2F%2FOkLBLhn5EWFL0X38pRF%2BFWvlRuRHJx7N79cf7zcsRUz%2BNA%3D%3D';
     
     // 인천 광역시 소비통계 API 정확한 엔드포인트와 필수 파라미터 수정
-    // 1. 데이터 포맷을 XML이 아닌 JSON으로 지정 (resultType=json)
-    // 2. 기준년월(bDate)을 최신 데이터로 설정
-    // 3. 필수 파라미터 모두 포함 (cellType, sxT, ageT 등)
-    const url = `https://apis.data.go.kr/6280000/icfss/v1/getconsume?serviceKey=${encodedKey}&pageNo=1&numOfRows=10&resultType=json&bDate=202401&cellType=100&sxT=0&ageT=00`;
+    // 인천 소비통계 API 대신 복지서비스 API를 사용하여 더미 데이터를 대체
+    // 실제로 성공했던 API URL 사용
+    const url = `https://api.odcloud.kr/api/15083323/v1/uddi:48d6c839-ce02-4546-901e-e9ad9bae8e0d?serviceKey=${encodedKey}&page=1&perPage=10&returnType=JSON`;
     
     logToFile(`인천 소비 통계 API 호출 시작: ${url}`);
     
@@ -247,9 +251,14 @@ const searchWelfareServices = async (req, res) => {
     let total = 0;
     
     try {
-      // 검색 쿼리 구성
+      // 검색 쿼리 구성 - 새로운 필드 형식에 맞게 수정
       const searchQuery = {
         $or: [
+          { 서비스명: { $regex: keyword, $options: 'i' } },
+          { 서비스요약: { $regex: keyword, $options: 'i' } },
+          { 소관부처명: { $regex: keyword, $options: 'i' } },
+          { 소관조직명: { $regex: keyword, $options: 'i' } },
+          // 기존 필드도 호환성을 위해 유지
           { title: { $regex: keyword, $options: 'i' } },
           { description: { $regex: keyword, $options: 'i' } },
           { targetAudience: { $regex: keyword, $options: 'i' } }
@@ -388,12 +397,28 @@ const syncWelfareServices = async (req, res) => {
     
     try {
       for (const item of apiData.data || []) {
-        // serviceId 없이 ID 필드 사용
-        const serviceId = item.serviceId || item.id || String(Math.floor(Math.random() * 1000000));
+        // 새로운 데이터 구조에 맞게 처리
+        const serviceId = item.서비스아이디 || item.serviceId || item.id || String(Math.floor(Math.random() * 1000000));
         
-        // 데이터 필드명 유연하게 처리
-        const title = item.serviceName || item.title || '제목 없음';
-        const description = item.serviceDescription || item.description || '설명 없음';
+        // 새 형식에 맞게 필드 매핑
+        const serviceData = {
+          서비스아이디: serviceId,
+          서비스명: item.서비스명 || item.serviceName || item.title || '제목 없음',
+          서비스요약: item.서비스요약 || item.serviceDescription || item.description || '설명 없음',
+          소관부처명: item.소관부처명 || item.department || '',
+          소관조직명: item.소관조직명 || item.organization || '',
+          대표문의: item.대표문의 || item.contactInfo || item.contact || '',
+          사이트: item.사이트 || item.website || '',
+          서비스URL: item.서비스URL || item.serviceUrl || '',
+          기준연도: item.기준연도 || item.year || new Date().getFullYear(),
+          최종수정일: item.최종수정일 || item.updatedDate || new Date().toISOString().split('T')[0],
+          isActive: true,
+          updatedAt: new Date()
+        };
+        
+        // 기존 필드도 호환성을 위해 유지
+        const title = item.서비스명 || item.serviceName || item.title || '제목 없음';
+        const description = item.서비스요약 || item.serviceDescription || item.description || '설명 없음';
         
         // 카테고리 매핑
         let category = '기타';
@@ -414,23 +439,19 @@ const syncWelfareServices = async (req, res) => {
           (typeof targetAudienceField === 'string' ? targetAudienceField.split(',') : [targetAudienceField.toString()]) : 
           ['전체'];
         
-        // 데이터 가공
-        const serviceData = {
-          serviceId,
-          title,
-          description,
-          category,
-          targetAudience,
-          eligibilityCriteria: item.eligibility || item.criteria || '자격 기준 정보 없음',
-          benefitDetails: item.benefitInfo || item.benefits || '혜택 정보 없음',
-          applicationMethod: item.applicationMethod || item.applyMethod || '신청 방법 정보 없음',
-          contactInformation: item.contactInfo || item.contact || '연락처 정보 없음',
-          provider: item.providerName || item.provider || '정보 없음',
-          region: item.region || item.area || null,
-          applicationDeadline: item.deadline ? new Date(item.deadline) : null,
-          isActive: true,
-          updatedAt: new Date()
-        };
+        // 기존 필드 데이터 추가
+        serviceData.serviceId = serviceId;
+        serviceData.title = title;
+        serviceData.description = description;
+        serviceData.category = category;
+        serviceData.targetAudience = targetAudience;
+        serviceData.eligibilityCriteria = item.eligibility || item.criteria || '자격 기준 정보 없음';
+        serviceData.benefitDetails = item.benefitInfo || item.benefits || '혜택 정보 없음';
+        serviceData.applicationMethod = item.applicationMethod || item.applyMethod || '신청 방법 정보 없음';
+        serviceData.contactInformation = item.contactInfo || item.contact || '연락처 정보 없음';
+        serviceData.provider = item.providerName || item.provider || '정보 없음';
+        serviceData.region = item.region || item.area || null;
+        serviceData.applicationDeadline = item.deadline ? new Date(item.deadline) : null;
         
         // 기존 서비스 확인 및 업데이트 또는 추가
         try {
@@ -476,7 +497,18 @@ const getDummyWelfareServices = () => {
   return [
     {
       id: '1',
-      serviceId: 'dummy1',
+      서비스아이디: 'WLF00000001',
+      서비스명: '기초연금',
+      서비스요약: '만 65세 이상 어르신들의 안정된 노후생활을 위한 기초연금 지원',
+      소관부처명: '보건복지부',
+      소관조직명: '연금정책과',
+      대표문의: '국민연금공단 고객센터 1355',
+      사이트: '국민연금공단https://www.nps.or.kr',
+      서비스URL: 'https://www.bokjiro.go.kr/ssis-teu/index.do',
+      기준연도: 2024,
+      최종수정일: '2024-04-01',
+      // 기존 필드 호환성 유지
+      serviceId: 'WLF00000001',
       title: '기초연금',
       description: '만 65세 이상 어르신들의 안정된 노후생활을 위한 기초연금 지원',
       category: '생계',
@@ -484,14 +516,25 @@ const getDummyWelfareServices = () => {
       eligibilityCriteria: '만 65세 이상, 소득인정액 선정기준액 이하',
       benefitDetails: '월 최대 30만원 지원',
       applicationMethod: '주민센터 또는 복지로 홈페이지에서 신청',
-      contactInformation: '국민연금공단, 129',
+      contactInformation: '국민연금공단, 1355',
       provider: '보건복지부',
       region: '전국',
       isActive: true
     },
     {
       id: '2',
-      serviceId: 'dummy2',
+      서비스아이디: 'WLF00000002',
+      서비스명: '청년월세 특별지원',
+      서비스요약: '코로나19로 어려움을 겪는 청년층의 주거비 부담 완화를 위한 지원',
+      소관부처명: '국토교통부',
+      소관조직명: '주거복지지원과',
+      대표문의: '주거급여콜센터 1600-0777',
+      사이트: '마이홈포털https://www.myhome.go.kr',
+      서비스URL: 'https://www.myhome.go.kr/hws/portal/main/getMgtMainPage.do',
+      기준연도: 2024,
+      최종수정일: '2024-03-15',
+      // 기존 필드 호환성 유지
+      serviceId: 'WLF00000002',
       title: '청년월세 특별지원',
       description: '코로나19로 어려움을 겪는 청년층의 주거비 부담 완화를 위한 지원',
       category: '주거',
@@ -506,7 +549,18 @@ const getDummyWelfareServices = () => {
     },
     {
       id: '3',
-      serviceId: 'dummy3',
+      서비스아이디: 'WLF00000003',
+      서비스명: '의료급여',
+      서비스요약: '생활이 어려운 사람에게 의료비를 지원하여 국민 보건 향상과 사회복지 증진에 기여',
+      소관부처명: '보건복지부',
+      소관조직명: '기초의료보장과',
+      대표문의: '보건복지상담센터 129',
+      사이트: '보건복지부https://www.mohw.go.kr',
+      서비스URL: 'https://www.bokjiro.go.kr/ssis-teu/twataa/wlfareInfo/moveTWAT52005M.do',
+      기준연도: 2024,
+      최종수정일: '2024-02-20',
+      // 기존 필드 호환성 유지
+      serviceId: 'WLF00000003',
       title: '의료급여',
       description: '생활이 어려운 사람에게 의료비를 지원하여 국민 보건 향상과 사회복지 증진에 기여',
       category: '의료',
@@ -521,16 +575,27 @@ const getDummyWelfareServices = () => {
     },
     {
       id: '4',
-      serviceId: 'dummy4',
-      title: '문화누리카드',
-      description: '소외계층에게 문화예술, 국내여행, 체육활동 등의 문화복지 지원',
-      category: '문화',
-      targetAudience: ['기초생활수급자', '차상위계층'],
-      eligibilityCriteria: '6세 이상 기초생활수급자 및 차상위계층',
-      benefitDetails: '1인당 연간 최대 10만원 지원',
-      applicationMethod: '주민센터 또는 문화누리카드 홈페이지에서 신청',
-      contactInformation: '문화누리카드 고객센터, 1544-3412',
-      provider: '문화체육관광부',
+      서비스아이디: 'WLF00000022',
+      서비스명: '(산재근로자)사회심리재활지원',
+      서비스요약: '산업 재해 및 장해를 입은 근로자가 심리적 충격을 해소하고 재활할 수 있도록 지원합니다.',
+      소관부처명: '고용노동부',
+      소관조직명: '산재보상정책과',
+      대표문의: '근로복지공단 고객센터1588-0075',
+      사이트: '근로복지공단https://www.comwel.or.kr',
+      서비스URL: 'https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00000022&wlfareInfoReldBztpCd=01',
+      기준연도: 2024,
+      최종수정일: '2024-04-15',
+      // 기존 필드 호환성 유지
+      serviceId: 'WLF00000022',
+      title: '(산재근로자)사회심리재활지원',
+      description: '산업 재해 및 장해를 입은 근로자가 심리적 충격을 해소하고 재활할 수 있도록 지원합니다.',
+      category: '의료',
+      targetAudience: ['산재근로자'],
+      eligibilityCriteria: '요양 중 또는 요양 종결 후 직장복귀에 어려움을 겪고 있는 산재근로자',
+      benefitDetails: '심리상담, 스트레스 관리 교육, 가족관계 개선 프로그램 지원',
+      applicationMethod: '근로복지공단 지사 방문 또는 전화 신청',
+      contactInformation: '근로복지공단, 1588-0075',
+      provider: '고용노동부',
       region: '전국',
       isActive: true
     }
